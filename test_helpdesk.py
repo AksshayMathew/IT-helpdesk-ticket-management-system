@@ -92,6 +92,56 @@ class HelpdeskTests(unittest.TestCase):
                 file.write("not json")
             self.assertEqual(load_tickets(path), [])
 
+    def test_unusable_file_is_backed_up_not_lost(self):
+        bad_contents = ['{"a": 1}', '[1, 2]', 'not json',
+                        '[{"ticket_id": "SR-0001", "category": "VPN", "priority": "Bogus", '
+                        '"requester": "a", "description": "d", '
+                        '"created_at": "2026-01-01T00:00:00", "status": "Open"}]']
+        for contents in bad_contents:
+            with tempfile.TemporaryDirectory() as folder:
+                path = os.path.join(folder, "tickets.json")
+                with open(path, "w") as file:
+                    file.write(contents)
+                self.assertEqual(load_tickets(path), [])
+                with open(path + ".bak") as backup:
+                    self.assertEqual(backup.read(), contents)
+
+    def test_ids_from_other_prefixes_are_ignored_when_numbering(self):
+        self.helpdesk.tickets.append(
+            Ticket("XX-abc", self.category, "High", "Ann", "odd id"))
+        self.assertEqual(self.helpdesk.next_ticket_id(), f"{TICKET_PREFIX}-0001")
+
+    def test_find_ticket_ignores_case_and_spaces(self):
+        ticket = self.raise_one()
+        self.assertIs(self.helpdesk.find_ticket(f"  {ticket.ticket_id.lower()} "), ticket)
+        with self.assertRaises(InvalidTicketError):
+            self.helpdesk.find_ticket("SR-9999")
+
+    def test_ticket_numbering_continues_after_reload(self):
+        self.raise_one()
+        self.raise_one()
+        reloaded = Helpdesk([Ticket.from_dict(t.to_dict()) for t in self.helpdesk.tickets])
+        self.assertEqual(reloaded.raise_ticket(self.category, "Low", "Bob", "x").ticket_id,
+                         f"{TICKET_PREFIX}-0003")
+
+    def test_backdated_ticket_is_breached_and_counted(self):
+        ticket = self.raise_one("Low")
+        self.helpdesk.backdate_ticket(ticket.ticket_id, SLA_HOURS["Low"] + 1)
+        self.assertTrue(self.helpdesk.is_breached(ticket))
+        self.assertIn(ticket, self.helpdesk.breached_tickets())
+
+    def test_filter_rejects_unknown_values(self):
+        for kwargs in ({"category": "Toaster"}, {"priority": "Urgent"}, {"status": "Done"}):
+            with self.assertRaises(InvalidTicketError):
+                self.helpdesk.filter_tickets(**kwargs)
+
+    def test_combined_filters(self):
+        self.raise_one("High")
+        self.raise_one("Low")
+        found = self.helpdesk.filter_tickets(category=self.category, priority="low", status="open")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].priority, "Low")
+
 
 if __name__ == "__main__":
     unittest.main()
