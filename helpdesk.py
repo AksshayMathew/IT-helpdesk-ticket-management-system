@@ -50,3 +50,23 @@ class Helpdesk:
         )
         self.tickets.append(ticket)
         return ticket
+
+    def find_ticket(self, ticket_id):
+        for ticket in self.tickets:
+            if ticket.ticket_id.lower() == ticket_id.strip().lower():
+                return ticket
+        raise InvalidTicketError(f"No ticket found with ID '{ticket_id.strip()}'.")
+
+    def update_status(self, ticket_id, new_status):
+        """Move a ticket one step forward: Open -> In Progress -> Resolved -> Closed."""
+        ticket = self.find_ticket(ticket_id)
+        new_status = match_option(new_status, STATUS_FLOW, "status")
+        next_index = STATUS_FLOW.index(ticket.status) + 1
+        if next_index == len(STATUS_FLOW):
+            raise InvalidTicketError(f"{ticket.ticket_id} is already Closed.")
+        if new_status != STATUS_FLOW[next_index]:
+            raise InvalidTicketError(
+                f"Cannot move {ticket.ticket_id} from '{ticket.status}' to '{new_status}'. "
+                f"Next allowed status: {STATUS_FLOW[next_index]}.")
+        ticket.status = new_status
+        return ticket
