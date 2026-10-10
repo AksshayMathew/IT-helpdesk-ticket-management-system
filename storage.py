@@ -22,8 +22,12 @@ def load_tickets(path=DATA_FILE):
     try:
         records = json.load(file)
         tickets = [Ticket.from_dict(record) for record in records]
-    except (json.JSONDecodeError, KeyError, ValueError):
-        print(f"Warning: {os.path.basename(path)} is unreadable, starting with no tickets.")
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+        file.close()
+        backup = path + ".bak"
+        os.replace(path, backup)
+        print(f"Warning: {os.path.basename(path)} is unreadable. "
+              f"Moved it to {os.path.basename(backup)} and starting with no tickets.")
         return []
     else:
         return tickets

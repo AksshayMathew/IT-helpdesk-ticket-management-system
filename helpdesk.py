@@ -41,7 +41,9 @@ class Helpdesk:
     def next_ticket_id(self):
         """Next free ID: highest number in use + 1 (so IDs never repeat after a restart)."""
         start = len(self.prefix) + 1
-        used_numbers = [int(ticket.ticket_id[start:]) for ticket in self.tickets]
+        used_numbers = [int(ticket.ticket_id[start:]) for ticket in self.tickets
+                        if ticket.ticket_id.startswith(self.prefix + "-")
+                        and ticket.ticket_id[start:].isdigit()]
         return make_ticket_id(self.prefix, max(used_numbers, default=0) + 1)
 
     def raise_ticket(self, category, priority, requester, description):

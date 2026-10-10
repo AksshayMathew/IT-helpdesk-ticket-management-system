@@ -1,5 +1,7 @@
-from helpdesk import Helpdesk, require_text
-from models import InvalidTicketError
+import math
+
+from helpdesk import Helpdesk, match_option, require_text
+from models import STATUS_FLOW, InvalidTicketError
 from personalize import EMPLOYEE_ID, SLA_HOURS
 from storage import load_tickets, save_tickets
 
@@ -24,17 +26,17 @@ def ask(message, check):
             print(f"  Error: {error}")
 
 
-def ask_number(message):
-    """Ask for a positive number of hours, re-prompting on bad input."""
+def ask_number(message, maximum=10000):
+    """Ask for a number of hours between 0 and maximum, re-prompting on bad input."""
     while True:
         try:
             hours = float(input(message))
         except ValueError:
             print("  Error: please enter a number.")
         else:
-            if hours > 0:
+            if math.isfinite(hours) and 0 < hours <= maximum:
                 return hours
-            print("  Error: the number must be greater than zero.")
+            print(f"  Error: the number must be greater than 0 and at most {maximum}.")
 
 
 def show_tickets(helpdesk, tickets):
@@ -65,10 +67,10 @@ def update_status_menu(helpdesk):
 
 def filter_menu(helpdesk):
     print("Leave a filter blank to skip it.")
-    category = input("Category: ").strip() or None
-    priority = input("Priority: ").strip() or None
-    status = input("Status: ").strip() or None
-    show_tickets(helpdesk, helpdesk.filter_tickets(category, priority, status))
+    category = ask("Category: ", lambda text: text.strip() and helpdesk.validate_category(text))
+    priority = ask("Priority: ", lambda text: text.strip() and helpdesk.validate_priority(text))
+    status = ask("Status: ", lambda text: text.strip() and match_option(text, STATUS_FLOW, "status"))
+    show_tickets(helpdesk, helpdesk.filter_tickets(category or None, priority or None, status or None))
 
 
 def summary_menu(helpdesk):
@@ -100,20 +102,12 @@ ACTIONS = {
 }
 
 
-def main():
-    helpdesk = Helpdesk(load_tickets())
-    print(f"Helpdesk started for employee {EMPLOYEE_ID} "
-          f"({len(helpdesk.tickets)} saved tickets loaded).")
-    print(f"SLA hours: {SLA_HOURS}")
+def run_menu(helpdesk):
     while True:
         print(MENU)
-        try:
-            choice = input("Choose an option: ").strip()
-        except EOFError:
-            choice = "0"
+        choice = input("Choose an option: ").strip()
         if choice == "0":
-            print("Goodbye!")
-            break
+            return
         action = ACTIONS.get(choice)
         if action is None:
             print("Please choose a number from the menu.")
@@ -123,7 +117,26 @@ def main():
         except InvalidTicketError as error:
             print(f"Error: {error}")
         else:
-            save_tickets(helpdesk.tickets)
+            save_changes(helpdesk)
+
+
+def save_changes(helpdesk):
+    try:
+        save_tickets(helpdesk.tickets)
+    except OSError as error:
+        print(f"Warning: could not save tickets ({error}).")
+
+
+def main():
+    helpdesk = Helpdesk(load_tickets())
+    print(f"Helpdesk started for employee {EMPLOYEE_ID} "
+          f"({len(helpdesk.tickets)} saved tickets loaded).")
+    print(f"SLA hours: {SLA_HOURS}")
+    try:
+        run_menu(helpdesk)
+    except (EOFError, KeyboardInterrupt):
+        print()
+    print("Goodbye!")
 
 
 if __name__ == "__main__":

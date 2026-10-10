@@ -46,6 +46,8 @@ class Ticket:
 
     @classmethod
     def from_dict(cls, data):
+        if data["priority"] not in PRIORITIES or data["status"] not in STATUS_FLOW:
+            raise ValueError("unknown priority or status in saved ticket")
         return cls(
             ticket_id=data["ticket_id"],
             category=data["category"],
