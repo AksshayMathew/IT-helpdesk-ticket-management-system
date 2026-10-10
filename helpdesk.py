@@ -91,3 +91,13 @@ class Helpdesk:
         ticket = self.find_ticket(ticket_id)
         ticket.created_at -= timedelta(hours=hours)
         return ticket
+
+    def summary(self, now=None):
+        """Ticket counts by status and by category, plus the SLA-breached tickets."""
+        return {
+            "by_status": {status: len([t for t in self.tickets if t.status == status])
+                          for status in STATUS_FLOW},
+            "by_category": {category: len([t for t in self.tickets if t.category == category])
+                            for category in self.categories},
+            "breached": [t.ticket_id for t in self.breached_tickets(now)],
+        }
