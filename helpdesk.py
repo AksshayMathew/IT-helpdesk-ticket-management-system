@@ -101,3 +101,16 @@ class Helpdesk:
                             for category in self.categories},
             "breached": [t.ticket_id for t in self.breached_tickets(now)],
         }
+
+    def filter_tickets(self, category=None, priority=None, status=None):
+        """Return tickets matching every filter that was given (None means 'any')."""
+        if category is not None:
+            category = self.validate_category(category)
+        if priority is not None:
+            priority = self.validate_priority(priority)
+        if status is not None:
+            status = match_option(status, STATUS_FLOW, "status")
+        return [t for t in self.tickets
+                if (category is None or t.category == category)
+                and (priority is None or t.priority == priority)
+                and (status is None or t.status == status)]
