@@ -1,6 +1,10 @@
+from datetime import datetime, timedelta
+
 from models import (PRIORITIES, STATUS_FLOW, InvalidTicketError, Ticket,
                     make_ticket_id)
 from personalize import CATEGORIES, SLA_HOURS, TICKET_PREFIX
+
+CLOSED_STATES = {"Resolved", "Closed"}
 
 
 def match_option(value, options, label):
@@ -69,4 +73,21 @@ class Helpdesk:
                 f"Cannot move {ticket.ticket_id} from '{ticket.status}' to '{new_status}'. "
                 f"Next allowed status: {STATUS_FLOW[next_index]}.")
         ticket.status = new_status
+        return ticket
+
+    def is_breached(self, ticket, now=None):
+        """An unresolved ticket is breached once now passes created time + its SLA hours."""
+        if ticket.status in CLOSED_STATES:
+            return False
+        now = now or datetime.now()
+        deadline = ticket.created_at + timedelta(hours=self.sla_hours[ticket.priority])
+        return now > deadline
+
+    def breached_tickets(self, now=None):
+        return [ticket for ticket in self.tickets if self.is_breached(ticket, now)]
+
+    def backdate_ticket(self, ticket_id, hours):
+        """Demo helper: pretend a ticket was created `hours` ago so an SLA breach can be shown."""
+        ticket = self.find_ticket(ticket_id)
+        ticket.created_at -= timedelta(hours=hours)
         return ticket
