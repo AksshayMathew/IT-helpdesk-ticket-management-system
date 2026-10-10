@@ -58,8 +58,8 @@ def raise_ticket_menu(helpdesk):
 def update_status_menu(helpdesk):
     ticket = ask("Ticket ID: ", helpdesk.find_ticket)
     print(f"Current: {ticket}")
-    new_status = input("New status (Open/In Progress/Resolved/Closed): ")
-    helpdesk.update_status(ticket.ticket_id, new_status)
+    ask("New status (Open/In Progress/Resolved/Closed): ",
+        lambda answer: helpdesk.update_status(ticket.ticket_id, answer))
     print(f"Updated: {ticket}")
 
 
