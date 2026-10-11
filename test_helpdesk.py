@@ -1,8 +1,14 @@
+import contextlib
+import glob
+import io
+import json
 import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from unittest import mock
 
+import main
 from helpdesk import Helpdesk
 from models import InvalidTicketError, Ticket, make_ticket_id
 from personalize import CATEGORIES, SLA_HOURS, TICKET_PREFIX, get_my_parameters
@@ -96,14 +102,18 @@ class HelpdeskTests(unittest.TestCase):
         bad_contents = ['{"a": 1}', '[1, 2]', 'not json',
                         '[{"ticket_id": "SR-0001", "category": "VPN", "priority": "Bogus", '
                         '"requester": "a", "description": "d", '
-                        '"created_at": "2026-01-01T00:00:00", "status": "Open"}]']
+                        '"created_at": "2026-01-01T00:00:00", "status": "Open"}]',
+                        "null", "", "[{}]", '"just text"']
         for contents in bad_contents:
             with tempfile.TemporaryDirectory() as folder:
                 path = os.path.join(folder, "tickets.json")
                 with open(path, "w") as file:
                     file.write(contents)
                 self.assertEqual(load_tickets(path), [])
-                with open(path + ".bak") as backup:
+                self.assertFalse(os.path.exists(path))
+                backups = glob.glob(path + ".*.bak")
+                self.assertEqual(len(backups), 1)
+                with open(backups[0]) as backup:
                     self.assertEqual(backup.read(), contents)
 
     def test_ids_from_other_prefixes_are_ignored_when_numbering(self):
@@ -141,6 +151,136 @@ class HelpdeskTests(unittest.TestCase):
         found = self.helpdesk.filter_tickets(category=self.category, priority="low", status="open")
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].priority, "Low")
+
+
+    def test_saved_ticket_with_non_text_field_is_rejected(self):
+        good = self.raise_one().to_dict()
+        for field, bad_value in (("description", 5), ("requester", None),
+                                 ("category", ["VPN"]), ("ticket_id", 7)):
+            with tempfile.TemporaryDirectory() as folder:
+                path = os.path.join(folder, "tickets.json")
+                with open(path, "w") as file:
+                    json.dump([dict(good, **{field: bad_value})], file)
+                self.assertEqual(load_tickets(path), [])
+
+    def test_file_saved_with_a_byte_order_mark_still_loads(self):
+        good = self.raise_one().to_dict()
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "tickets.json")
+            with open(path, "w", encoding="utf-8-sig") as file:
+                json.dump([good], file)
+            self.assertEqual([t.to_dict() for t in load_tickets(path)], [good])
+
+    def test_oddly_numbered_ids_do_not_break_numbering(self):
+        for odd_id in ("SR-\u00b2", "SR-", "SR-1a", "SR--5"):
+            self.helpdesk.tickets.append(Ticket(odd_id, self.category, "High", "Ann", "odd"))
+        self.assertEqual(self.helpdesk.next_ticket_id(), f"{TICKET_PREFIX}-0001")
+
+    def test_numbering_goes_past_four_digits(self):
+        self.helpdesk.tickets.append(
+            Ticket(make_ticket_id(TICKET_PREFIX, 9999), self.category, "High", "Ann", "x"))
+        self.assertEqual(self.helpdesk.next_ticket_id(), f"{TICKET_PREFIX}-10000")
+
+    def test_next_status_for_every_state(self):
+        ticket = self.raise_one()
+        seen = []
+        while self.helpdesk.next_status(ticket) is not None:
+            seen.append(self.helpdesk.next_status(ticket))
+            self.helpdesk.update_status(ticket.ticket_id, seen[-1])
+        self.assertEqual(seen, ["In Progress", "Resolved", "Closed"])
+
+    def test_backdating_too_far_is_rejected_not_a_crash(self):
+        ticket = self.raise_one()
+        with self.assertRaises(InvalidTicketError):
+            self.helpdesk.backdate_ticket(ticket.ticket_id, 24 * 365 * 3000)
+        self.assertGreater(ticket.created_at.year, 2000)
+
+
+def run_menu_with(inputs, tickets=None):
+    """Run the CLI menu with scripted keyboard input; return the printed text."""
+    helpdesk = Helpdesk(tickets if tickets is not None else [])
+    output = io.StringIO()
+    with mock.patch("builtins.input", side_effect=inputs), \
+            mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
+        main.run_menu(helpdesk)
+    return helpdesk, output.getvalue()
+
+
+class MenuTests(unittest.TestCase):
+    def setUp(self):
+        self.category = CATEGORIES[0]
+
+    def test_raise_ticket_reprompts_until_input_is_valid(self):
+        helpdesk, printed = run_menu_with(
+            ["1", "toaster", self.category.lower(), "urgent", "high", "", "Ann", "  ",
+             "Printer jam", "0"])
+        self.assertEqual(len(helpdesk.tickets), 1)
+        ticket = helpdesk.tickets[0]
+        self.assertEqual((ticket.category, ticket.priority, ticket.requester, ticket.description),
+                         (self.category, "High", "Ann", "Printer jam"))
+        for message in ("Invalid category 'toaster'", "Invalid priority 'urgent'",
+                        "Requester name cannot be empty", "Description cannot be empty"):
+            self.assertIn(message, printed)
+
+    def test_update_and_backdate_can_be_cancelled_with_enter(self):
+        helpdesk, printed = run_menu_with(["2", "", "6", "", "2", "SR-9999", "", "0"])
+        self.assertIn("No ticket found with ID 'SR-9999'", printed)
+        self.assertEqual(helpdesk.tickets, [])
+
+    def test_closed_ticket_is_not_a_dead_end(self):
+        ticket = Ticket("SR-0001", self.category, "Low", "Ann", "done", status="Closed")
+        _, printed = run_menu_with(["2", "SR-0001", "0"], [ticket])
+        self.assertIn("already Closed", printed)
+        self.assertNotIn("New status", printed)
+
+    def test_status_prompt_reprompts_then_can_be_cancelled(self):
+        ticket = Ticket("SR-0001", self.category, "Low", "Ann", "x")
+        _, printed = run_menu_with(["2", "SR-0001", "Closed", "bogus", "", "0"], [ticket])
+        self.assertEqual(ticket.status, "Open")
+        self.assertIn("Cannot move SR-0001", printed)
+        self.assertIn("Invalid status 'bogus'", printed)
+
+    def test_backdate_rejects_bad_numbers(self):
+        ticket = Ticket("SR-0001", self.category, "Low", "Ann", "x")
+        original = ticket.created_at
+        bad_numbers = ["abc", "0", "-5", "inf", "nan", "1e400", "10001"]
+        _, printed = run_menu_with(["6", "SR-0001"] + bad_numbers + ["2", "0"], [ticket])
+        self.assertEqual(printed.count("Error:"), len(bad_numbers))
+        self.assertEqual(ticket.created_at, original - timedelta(hours=2))
+
+    def test_filter_menu_reprompts_on_bad_value_and_blank_skips(self):
+        tickets = [Ticket("SR-0001", self.category, "Low", "Ann", "x"),
+                   Ticket("SR-0002", CATEGORIES[1], "High", "Bob", "y")]
+        _, printed = run_menu_with(["4", "toaster", "", "", "", "0"], tickets)
+        self.assertIn("Invalid category 'toaster'", printed)
+        self.assertIn("SR-0001", printed)
+        self.assertIn("SR-0002", printed)
+
+    def test_unknown_menu_choice_is_handled(self):
+        _, printed = run_menu_with(["9", "abc", "", "0"])
+        self.assertEqual(printed.count("Please choose a number from the menu."), 3)
+
+    def test_ending_input_mid_prompt_exits_cleanly(self):
+        output = io.StringIO()
+        with mock.patch("builtins.input", side_effect=["1", "vpn", EOFError]), \
+                mock.patch("main.load_tickets", return_value=[]), \
+                mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
+            main.main()
+        self.assertIn("Goodbye!", output.getvalue())
+
+    def test_unreadable_tickets_file_gives_a_message_not_a_crash(self):
+        output = io.StringIO()
+        with mock.patch("main.load_tickets", side_effect=PermissionError("locked")), \
+                contextlib.redirect_stdout(output):
+            main.main()
+        self.assertIn("Cannot read the saved tickets", output.getvalue())
+
+    def test_save_failure_only_warns(self):
+        output = io.StringIO()
+        with mock.patch("main.save_tickets", side_effect=OSError("disk full")), \
+                contextlib.redirect_stdout(output):
+            main.save_changes(Helpdesk())
+        self.assertIn("could not save", output.getvalue())
 
 
 if __name__ == "__main__":

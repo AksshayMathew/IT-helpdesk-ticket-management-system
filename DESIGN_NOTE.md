@@ -29,7 +29,7 @@ easily.
 `STATUS_FLOW = ("Open", "In Progress", "Resolved", "Closed")`, and a ticket
 may only move to the status that comes *right after* its current one.
 
-**Why:** the first idea was a long if/elif chain for every allowed pair of
+**Why:** the alternative would be a long if/elif chain for every allowed pair of
 statuses, which is easy to get wrong and hard to change. With the tuple, the
 rule is just "find the current position, the next one is the only allowed
 move", so a jump like Open -> Closed is rejected by one check and the error

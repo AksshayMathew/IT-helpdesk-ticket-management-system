@@ -29,14 +29,18 @@ python personalize.py
 | Option | What it does |
 |---|---|
 | 1 | Raise a ticket (category, priority, requester, description) - ID and timestamp are automatic, e.g. `SR-0001` |
-| 2 | Update status: Open -> In Progress -> Resolved -> Closed (jumps are rejected) |
+| 2 | Update status: Open -> In Progress -> Resolved -> Closed (jumps are rejected; press Enter to cancel) |
 | 3 | List all tickets (SLA-breached ones are flagged) |
 | 4 | Filter / search by category, priority and/or status |
 | 5 | Summary: counts by status, counts by category, SLA-breached tickets |
-| 6 | Backdate a ticket - a demo helper so an SLA breach can be shown quickly |
+| 6 | Backdate a ticket - a demo helper so an SLA breach can be shown quickly (press Enter to cancel) |
 | 0 | Exit |
 
 Invalid input never crashes the program: it prints a clear error and asks again.
+Ctrl+C (or Ctrl+Z then Enter on Windows) exits at any prompt; saved tickets are kept.
+
+If `tickets.json` is damaged or edited into something unreadable, the program does not
+delete it: it renames it to `tickets.json.<date-time>.bak`, tells you, and starts with no tickets.
 
 ## Project layout
 
