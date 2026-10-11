@@ -3,6 +3,7 @@ from datetime import datetime
 PRIORITIES = ("Low", "Medium", "High", "Critical")
 STATUS_FLOW = ("Open", "In Progress", "Resolved", "Closed")
 TIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
+TEXT_FIELDS = ("ticket_id", "category", "requester", "description")
 
 
 class InvalidTicketError(Exception):
@@ -46,6 +47,8 @@ class Ticket:
 
     @classmethod
     def from_dict(cls, data):
+        if not all(isinstance(data[field], str) for field in TEXT_FIELDS):
+            raise ValueError("saved ticket has a field that is not text")
         if data["priority"] not in PRIORITIES or data["status"] not in STATUS_FLOW:
             raise ValueError("unknown priority or status in saved ticket")
         return cls(

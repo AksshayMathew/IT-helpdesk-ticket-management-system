@@ -1,4 +1,5 @@
 import math
+import sys
 
 from helpdesk import Helpdesk, match_option, require_text
 from models import STATUS_FLOW, InvalidTicketError
@@ -17,20 +18,28 @@ MENU = """
 """
 
 
-def ask(message, check):
-    """Keep asking until check(answer) succeeds; show the error and re-prompt otherwise."""
+def ask(message, check, allow_blank=False):
+    """Keep asking until check(answer) succeeds; show the error and re-prompt otherwise.
+    If allow_blank is True, pressing Enter on its own cancels and returns None."""
     while True:
+        answer = input(message)
+        if allow_blank and not answer.strip():
+            return None
         try:
-            return check(input(message))
+            return check(answer)
         except InvalidTicketError as error:
             print(f"  Error: {error}")
 
 
 def ask_number(message, maximum=10000):
-    """Ask for a number of hours between 0 and maximum, re-prompting on bad input."""
+    """Ask for a number of hours between 0 and maximum, re-prompting on bad input.
+    Pressing Enter on its own cancels and returns None."""
     while True:
+        answer = input(message)
+        if not answer.strip():
+            return None
         try:
-            hours = float(input(message))
+            hours = float(answer)
         except ValueError:
             print("  Error: please enter a number.")
         else:
@@ -58,11 +67,18 @@ def raise_ticket_menu(helpdesk):
 
 
 def update_status_menu(helpdesk):
-    ticket = ask("Ticket ID: ", helpdesk.find_ticket)
+    ticket = ask("Ticket ID (Enter to cancel): ", helpdesk.find_ticket, allow_blank=True)
+    if ticket is None:
+        return
+    if helpdesk.next_status(ticket) is None:
+        print(f"{ticket.ticket_id} is already Closed, so there is nothing left to update.")
+        return
     print(f"Current: {ticket}")
-    ask("New status (Open/In Progress/Resolved/Closed): ",
-        lambda answer: helpdesk.update_status(ticket.ticket_id, answer))
-    print(f"Updated: {ticket}")
+    updated = ask("New status (Open/In Progress/Resolved/Closed, Enter to cancel): ",
+                  lambda answer: helpdesk.update_status(ticket.ticket_id, answer),
+                  allow_blank=True)
+    if updated is not None:
+        print(f"Updated: {ticket}")
 
 
 def filter_menu(helpdesk):
@@ -86,8 +102,12 @@ def summary_menu(helpdesk):
 
 
 def backdate_menu(helpdesk):
-    ticket = ask("Ticket ID: ", helpdesk.find_ticket)
-    hours = ask_number("Move creation time back by how many hours? ")
+    ticket = ask("Ticket ID (Enter to cancel): ", helpdesk.find_ticket, allow_blank=True)
+    if ticket is None:
+        return
+    hours = ask_number("Move creation time back by how many hours? (Enter to cancel) ")
+    if hours is None:
+        return
     helpdesk.backdate_ticket(ticket.ticket_id, hours)
     print(f"Updated: {ticket}")
 
@@ -128,7 +148,11 @@ def save_changes(helpdesk):
 
 
 def main():
-    helpdesk = Helpdesk(load_tickets())
+    try:
+        helpdesk = Helpdesk(load_tickets())
+    except OSError as error:
+        print(f"Cannot read the saved tickets ({error}). Fix the problem and start again.")
+        return
     print(f"Helpdesk started for employee {EMPLOYEE_ID} "
           f"({len(helpdesk.tickets)} saved tickets loaded).")
     print(f"SLA hours: {SLA_HOURS}")
@@ -140,4 +164,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Print "?" instead of crashing if the console or pipe cannot show a character (e.g. an emoji).
+    sys.stdout.reconfigure(errors="replace")
     main()

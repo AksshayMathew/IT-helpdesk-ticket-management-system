@@ -43,7 +43,7 @@ class Helpdesk:
         start = len(self.prefix) + 1
         used_numbers = [int(ticket.ticket_id[start:]) for ticket in self.tickets
                         if ticket.ticket_id.startswith(self.prefix + "-")
-                        and ticket.ticket_id[start:].isdigit()]
+                        and ticket.ticket_id[start:].isdecimal()]
         return make_ticket_id(self.prefix, max(used_numbers, default=0) + 1)
 
     def raise_ticket(self, category, priority, requester, description):
@@ -67,15 +67,20 @@ class Helpdesk:
         """Move a ticket one step forward: Open -> In Progress -> Resolved -> Closed."""
         ticket = self.find_ticket(ticket_id)
         new_status = match_option(new_status, STATUS_FLOW, "status")
-        next_index = STATUS_FLOW.index(ticket.status) + 1
-        if next_index == len(STATUS_FLOW):
+        allowed = self.next_status(ticket)
+        if allowed is None:
             raise InvalidTicketError(f"{ticket.ticket_id} is already Closed.")
-        if new_status != STATUS_FLOW[next_index]:
+        if new_status != allowed:
             raise InvalidTicketError(
                 f"Cannot move {ticket.ticket_id} from '{ticket.status}' to '{new_status}'. "
-                f"Next allowed status: {STATUS_FLOW[next_index]}.")
+                f"Next allowed status: {allowed}.")
         ticket.status = new_status
         return ticket
+
+    def next_status(self, ticket):
+        """The only status the ticket may move to next, or None if it is already Closed."""
+        next_index = STATUS_FLOW.index(ticket.status) + 1
+        return STATUS_FLOW[next_index] if next_index < len(STATUS_FLOW) else None
 
     def is_breached(self, ticket, now=None):
         """An unresolved ticket is breached once now passes created time + its SLA hours."""
@@ -91,7 +96,10 @@ class Helpdesk:
     def backdate_ticket(self, ticket_id, hours):
         """Demo helper: pretend a ticket was created `hours` ago so an SLA breach can be shown."""
         ticket = self.find_ticket(ticket_id)
-        ticket.created_at -= timedelta(hours=hours)
+        try:
+            ticket.created_at -= timedelta(hours=hours)
+        except OverflowError:
+            raise InvalidTicketError("That would move the creation time too far into the past.")
         return ticket
 
     def summary(self, now=None):
