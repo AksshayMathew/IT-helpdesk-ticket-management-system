@@ -15,6 +15,14 @@ from personalize import CATEGORIES, SLA_HOURS, TICKET_PREFIX, get_my_parameters
 from storage import load_tickets, save_tickets
 
 
+def load_quietly(path):
+    """Call load_tickets but capture what it prints; return (tickets, printed text)."""
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        tickets = load_tickets(path)
+    return tickets, printed.getvalue()
+
+
 class HelpdeskTests(unittest.TestCase):
     def setUp(self):
         self.helpdesk = Helpdesk()
@@ -93,10 +101,12 @@ class HelpdeskTests(unittest.TestCase):
     def test_missing_or_corrupt_file_gives_empty_list(self):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "tickets.json")
-            self.assertEqual(load_tickets(path), [])
+            self.assertEqual(load_quietly(path), ([], ""))
             with open(path, "w") as file:
                 file.write("not json")
-            self.assertEqual(load_tickets(path), [])
+            tickets, printed = load_quietly(path)
+        self.assertEqual(tickets, [])
+        self.assertIn("unreadable", printed)
 
     def test_unusable_file_is_backed_up_not_lost(self):
         bad_contents = ['{"a": 1}', '[1, 2]', 'not json',
@@ -109,10 +119,12 @@ class HelpdeskTests(unittest.TestCase):
                 path = os.path.join(folder, "tickets.json")
                 with open(path, "w") as file:
                     file.write(contents)
-                self.assertEqual(load_tickets(path), [])
+                tickets, printed = load_quietly(path)
+                self.assertEqual(tickets, [])
                 self.assertFalse(os.path.exists(path))
                 backups = glob.glob(path + ".*.bak")
                 self.assertEqual(len(backups), 1)
+                self.assertIn(os.path.basename(backups[0]), printed)
                 with open(backups[0]) as backup:
                     self.assertEqual(backup.read(), contents)
 
@@ -151,8 +163,6 @@ class HelpdeskTests(unittest.TestCase):
         found = self.helpdesk.filter_tickets(category=self.category, priority="low", status="open")
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].priority, "Low")
-
-
     def test_saved_ticket_with_non_text_field_is_rejected(self):
         good = self.raise_one().to_dict()
         for field, bad_value in (("description", 5), ("requester", None),
@@ -161,7 +171,7 @@ class HelpdeskTests(unittest.TestCase):
                 path = os.path.join(folder, "tickets.json")
                 with open(path, "w") as file:
                     json.dump([dict(good, **{field: bad_value})], file)
-                self.assertEqual(load_tickets(path), [])
+                self.assertEqual(load_quietly(path)[0], [])
 
     def test_file_saved_with_a_byte_order_mark_still_loads(self):
         good = self.raise_one().to_dict()
@@ -169,7 +179,9 @@ class HelpdeskTests(unittest.TestCase):
             path = os.path.join(folder, "tickets.json")
             with open(path, "w", encoding="utf-8-sig") as file:
                 json.dump([good], file)
-            self.assertEqual([t.to_dict() for t in load_tickets(path)], [good])
+            tickets, printed = load_quietly(path)
+        self.assertEqual([t.to_dict() for t in tickets], [good])
+        self.assertEqual(printed, "")
 
     def test_oddly_numbered_ids_do_not_break_numbering(self):
         for odd_id in ("SR-\u00b2", "SR-", "SR-1a", "SR--5"):
