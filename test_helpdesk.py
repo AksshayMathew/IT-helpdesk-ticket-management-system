@@ -9,10 +9,16 @@ from datetime import datetime, timedelta
 from unittest import mock
 
 import main
-from helpdesk import Helpdesk
+from helpdesk import Helpdesk, require_employee_id
 from models import InvalidTicketError, Ticket, make_ticket_id
-from personalize import CATEGORIES, SLA_HOURS, TICKET_PREFIX, get_my_parameters
-from storage import load_tickets, save_tickets
+from personalize import get_my_parameters
+from storage import data_path, load_tickets, save_tickets
+
+EMPLOYEE_ID = "56040183"
+PARAMETERS = get_my_parameters(EMPLOYEE_ID)
+CATEGORIES = PARAMETERS["categories"]
+SLA_HOURS = PARAMETERS["sla_hours"]
+TICKET_PREFIX = PARAMETERS["ticket_prefix"]
 
 
 def load_quietly(path):
@@ -25,7 +31,7 @@ def load_quietly(path):
 
 class HelpdeskTests(unittest.TestCase):
     def setUp(self):
-        self.helpdesk = Helpdesk()
+        self.helpdesk = Helpdesk(EMPLOYEE_ID)
         self.category = CATEGORIES[0]
 
     def raise_one(self, priority="High"):
@@ -34,6 +40,23 @@ class HelpdeskTests(unittest.TestCase):
     def test_parameters_are_deterministic(self):
         self.assertEqual(get_my_parameters("56040183"), get_my_parameters("56040183"))
         self.assertEqual(len(CATEGORIES), 5)
+
+    def test_employee_id_is_checked(self):
+        self.assertEqual(require_employee_id("  56040183 "), "56040183")
+        self.assertEqual(require_employee_id("EMP1042"), "EMP1042")
+        for bad in ("", "   ", "ab cd", "emp-1", "a/b", "..", "x" * 21, "éa", "²"):
+            with self.assertRaises(InvalidTicketError):
+                require_employee_id(bad)
+
+    def test_each_employee_gets_their_own_parameters_and_file(self):
+        mine, other = Helpdesk("56040183"), Helpdesk("EMP1042")
+        self.assertEqual((mine.categories, mine.sla_hours, mine.prefix),
+                         (CATEGORIES, SLA_HOURS, TICKET_PREFIX))
+        self.assertNotEqual((mine.categories, mine.sla_hours, mine.prefix),
+                            (other.categories, other.sla_hours, other.prefix))
+        self.assertEqual(other.employee_id, "EMP1042")
+        self.assertNotEqual(data_path("56040183"), data_path("EMP1042"))
+        self.assertTrue(data_path("EMP1042").endswith("tickets_EMP1042.json"))
 
     def test_ticket_id_is_zero_padded_with_prefix(self):
         self.assertEqual(make_ticket_id("SR", 7), "SR-0007")
@@ -142,7 +165,7 @@ class HelpdeskTests(unittest.TestCase):
     def test_ticket_numbering_continues_after_reload(self):
         self.raise_one()
         self.raise_one()
-        reloaded = Helpdesk([Ticket.from_dict(t.to_dict()) for t in self.helpdesk.tickets])
+        reloaded = Helpdesk(EMPLOYEE_ID, [Ticket.from_dict(t.to_dict()) for t in self.helpdesk.tickets])
         self.assertEqual(reloaded.raise_ticket(self.category, "Low", "Bob", "x").ticket_id,
                          f"{TICKET_PREFIX}-0003")
 
@@ -210,7 +233,7 @@ class HelpdeskTests(unittest.TestCase):
 
 def run_menu_with(inputs, tickets=None):
     """Run the CLI menu with scripted keyboard input; return the printed text."""
-    helpdesk = Helpdesk(tickets if tickets is not None else [])
+    helpdesk = Helpdesk(EMPLOYEE_ID, tickets if tickets is not None else [])
     output = io.StringIO()
     with mock.patch("builtins.input", side_effect=inputs), \
             mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
@@ -274,15 +297,23 @@ class MenuTests(unittest.TestCase):
 
     def test_ending_input_mid_prompt_exits_cleanly(self):
         output = io.StringIO()
-        with mock.patch("builtins.input", side_effect=["1", "vpn", EOFError]), \
+        with mock.patch("builtins.input", side_effect=[EMPLOYEE_ID, "1", "vpn", EOFError]), \
                 mock.patch("main.load_tickets", return_value=[]), \
                 mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
             main.main()
         self.assertIn("Goodbye!", output.getvalue())
 
+    def test_ending_input_at_the_employee_id_prompt_exits_cleanly(self):
+        output = io.StringIO()
+        with mock.patch("builtins.input", side_effect=EOFError), contextlib.redirect_stdout(output):
+            main.main()
+        self.assertTrue(output.getvalue().startswith("Welcome to HCL Tech IT Support System"))
+        self.assertIn("Goodbye!", output.getvalue())
+
     def test_unreadable_tickets_file_gives_a_message_not_a_crash(self):
         output = io.StringIO()
-        with mock.patch("main.load_tickets", side_effect=PermissionError("locked")), \
+        with mock.patch("builtins.input", side_effect=[EMPLOYEE_ID]), \
+                mock.patch("main.load_tickets", side_effect=PermissionError("locked")), \
                 contextlib.redirect_stdout(output):
             main.main()
         self.assertIn("Cannot read the saved tickets", output.getvalue())
@@ -291,8 +322,36 @@ class MenuTests(unittest.TestCase):
         output = io.StringIO()
         with mock.patch("main.save_tickets", side_effect=OSError("disk full")), \
                 contextlib.redirect_stdout(output):
-            main.save_changes(Helpdesk())
+            main.save_changes(Helpdesk(EMPLOYEE_ID))
         self.assertIn("could not save", output.getvalue())
+
+    def test_welcome_then_asks_for_employee_id_until_valid(self):
+        output = io.StringIO()
+        with mock.patch("builtins.input", side_effect=["", "bad id!", "x" * 21, "  " + EMPLOYEE_ID + " ", "0"]), \
+                mock.patch("main.load_tickets", return_value=[]) as loader, \
+                mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
+            main.main()
+        printed = output.getvalue()
+        self.assertTrue(printed.startswith("Welcome to HCL Tech IT Support System"))
+        self.assertIn("Employee ID cannot be empty", printed)
+        self.assertEqual(printed.count("must be 1 to 20 letters or digits"), 2)
+        self.assertIn(f"Hello, employee {EMPLOYEE_ID}", printed)
+        loader.assert_called_once_with(data_path(EMPLOYEE_ID))
+
+    def test_another_employee_gets_their_own_parameters_and_file(self):
+        other = "EMP1042"
+        output = io.StringIO()
+        with mock.patch("builtins.input", side_effect=[other, "0"]), \
+                mock.patch("main.load_tickets", return_value=[]) as loader, \
+                mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
+            main.main()
+        loader.assert_called_once_with(data_path(other))
+        self.assertIn(str(get_my_parameters(other)["sla_hours"]), output.getvalue())
+
+    def test_changes_are_saved_to_the_employees_own_file(self):
+        with mock.patch("main.save_tickets") as saver:
+            main.save_changes(Helpdesk("EMP1042", []))
+        saver.assert_called_once_with([], data_path("EMP1042"))
 
 
 if __name__ == "__main__":

@@ -1,13 +1,12 @@
 import math
 import sys
 
-from helpdesk import Helpdesk, match_option, require_text
+from helpdesk import Helpdesk, match_option, require_employee_id, require_text
 from models import STATUS_FLOW, InvalidTicketError
-from personalize import EMPLOYEE_ID, SLA_HOURS
-from storage import load_tickets, save_tickets
+from storage import data_path, load_tickets, save_tickets
 
 MENU = """
-===== IT Helpdesk =====
+===== HCL Tech IT Support =====
 1. Raise a ticket
 2. Update ticket status
 3. List all tickets
@@ -142,21 +141,23 @@ def run_menu(helpdesk):
 
 def save_changes(helpdesk):
     try:
-        save_tickets(helpdesk.tickets)
+        save_tickets(helpdesk.tickets, data_path(helpdesk.employee_id))
     except OSError as error:
         print(f"Warning: could not save tickets ({error}).")
 
 
 def main():
+    print("Welcome to HCL Tech IT Support System")
     try:
-        helpdesk = Helpdesk(load_tickets())
-    except OSError as error:
-        print(f"Cannot read the saved tickets ({error}). Fix the problem and start again.")
-        return
-    print(f"Helpdesk started for employee {EMPLOYEE_ID} "
-          f"({len(helpdesk.tickets)} saved tickets loaded).")
-    print(f"SLA hours: {SLA_HOURS}")
-    try:
+        employee_id = ask("Please enter your employee ID: ", require_employee_id)
+        try:
+            tickets = load_tickets(data_path(employee_id))
+        except OSError as error:
+            print(f"Cannot read the saved tickets ({error}). Fix the problem and start again.")
+            return
+        helpdesk = Helpdesk(employee_id, tickets)
+        print(f"Hello, employee {employee_id} ({len(tickets)} saved tickets loaded).")
+        print(f"Your SLA hours: {helpdesk.sla_hours}")
         run_menu(helpdesk)
     except (EOFError, KeyboardInterrupt):
         print()

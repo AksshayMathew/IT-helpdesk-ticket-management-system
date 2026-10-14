@@ -1,8 +1,6 @@
 import hashlib
 import random
 
-EMPLOYEE_ID = "56040183"
-
 
 def get_my_parameters(employee_id: str) -> dict:
     """Deterministic, unique parameters derived from the employee ID.
@@ -26,14 +24,10 @@ def get_my_parameters(employee_id: str) -> dict:
     }
 
 
-PARAMETERS = get_my_parameters(EMPLOYEE_ID)
-CATEGORIES = PARAMETERS['categories']
-SLA_HOURS = PARAMETERS['sla_hours']
-TICKET_PREFIX = PARAMETERS['ticket_prefix']
-
-
 if __name__ == "__main__":
-    print(f"Parameters for employee {EMPLOYEE_ID}:")
-    print(f"  Categories    : {', '.join(CATEGORIES)}")
-    print(f"  SLA hours     : {SLA_HOURS}")
-    print(f"  Ticket prefix : {TICKET_PREFIX}")
+    employee_id = input("Employee ID: ").strip()
+    parameters = get_my_parameters(employee_id)
+    print(f"Parameters for employee {employee_id}:")
+    print(f"  Categories    : {', '.join(parameters['categories'])}")
+    print(f"  SLA hours     : {parameters['sla_hours']}")
+    print(f"  Ticket prefix : {parameters['ticket_prefix']}")

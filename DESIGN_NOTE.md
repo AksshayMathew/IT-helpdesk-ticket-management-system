@@ -1,6 +1,6 @@
 # Design Note - IT Helpdesk Ticket Management System
 
-**Employee ID used:** 56040183
+**Employee ID used:** 56040183 (typed in when the program starts)
 
 ## Our personalised parameters
 
@@ -10,9 +10,10 @@
 | SLA hours | Critical = 4, High = 6, Medium = 47, Low = 108 |
 | Ticket ID prefix | `SR` (tickets look like `SR-0001`) |
 
-These come from `get_my_parameters("56040183")` in `personalize.py`. The
-function always returns the same result for the same ID, so the program
-behaves the same every time we run it.
+These come from `get_my_parameters("56040183")` in `personalize.py`, called with the
+ID the user types at the start. The function always returns the same result for the
+same ID, so the program behaves the same every time. Each employee ID has its own
+tickets file (`tickets_<id>.json`), so different IDs never mix their tickets.
 
 ## How the program is built
 

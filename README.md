@@ -9,8 +9,11 @@ tickets, with SLA breach detection. Pure Python 3, standard library only.
 python main.py
 ```
 
-Tickets are saved to `tickets.json` (created automatically in this folder)
-after every change and loaded again on the next start.
+The program greets you with "Welcome to HCL Tech IT Support System" and asks for your
+employee ID (letters and digits, up to 20 characters). The ID decides your ticket categories,
+SLA hours and ticket prefix. Each employee has their own file, for example
+`tickets_56040183.json` (created automatically in this folder). Tickets are saved after every
+change and loaded again the next time the same ID is entered.
 
 To run the tests:
 
@@ -18,7 +21,7 @@ To run the tests:
 python -m unittest -v
 ```
 
-To print our personalised parameters (categories, SLA hours, ID prefix):
+To print the personalised parameters (categories, SLA hours, ID prefix) for any employee ID:
 
 ```
 python personalize.py
@@ -39,14 +42,14 @@ python personalize.py
 Invalid input never crashes the program: it prints a clear error and asks again.
 Ctrl+C (or Ctrl+Z then Enter on Windows) exits at any prompt; saved tickets are kept.
 
-If `tickets.json` is damaged or edited into something unreadable, the program does not
-delete it: it renames it to `tickets.json.<date-time>.bak`, tells you, and starts with no tickets.
+If an employee's tickets file is damaged or edited into something unreadable, the program does
+not delete it: it renames it to `tickets_<id>.json.<date-time>.bak`, tells you, and starts with no tickets.
 
 ## Project layout
 
 | File | Purpose |
 |---|---|
-| `personalize.py` | Parameters generated from our employee ID (categories, SLA hours, prefix) |
+| `personalize.py` | Parameters generated from the employee ID that is entered (categories, SLA hours, prefix) |
 | `models.py` | `Ticket` class, priorities, status flow, custom `InvalidTicketError` |
 | `storage.py` | Saving and loading tickets as JSON |
 | `helpdesk.py` | Business logic: raise, validate, update status, SLA, summary, filter |
@@ -54,7 +57,7 @@ delete it: it renames it to `tickets.json.<date-time>.bak`, tells you, and start
 | `test_helpdesk.py` | Unit tests |
 | `DESIGN_NOTE.md` | One-page design note |
 
-## Our parameters (employee ID 56040183)
+## Our parameters (when employee ID 56040183 is entered)
 
 - Categories: Hardware, VPN, Application Bug, Account Lockout, Access Request
 - SLA hours: Critical 4, High 6, Medium 47, Low 108

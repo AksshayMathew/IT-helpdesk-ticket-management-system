@@ -4,17 +4,22 @@ from datetime import datetime
 
 from models import Ticket
 
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tickets.json")
+DATA_FOLDER = os.path.dirname(os.path.abspath(__file__))
 
 
-def save_tickets(tickets, path=DATA_FILE):
+def data_path(employee_id):
+    """Each employee has their own file next to the code, e.g. tickets_56040183.json."""
+    return os.path.join(DATA_FOLDER, f"tickets_{employee_id}.json")
+
+
+def save_tickets(tickets, path):
     """Write all tickets to a JSON file."""
     records = [ticket.to_dict() for ticket in tickets]
     with open(path, "w", encoding="utf-8") as file:
         json.dump(records, file, indent=2)
 
 
-def load_tickets(path=DATA_FILE):
+def load_tickets(path):
     """Read tickets from the JSON file; return an empty list if there is no usable data."""
     try:
         file = open(path, "r", encoding="utf-8-sig")

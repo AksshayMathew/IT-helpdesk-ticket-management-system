@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 from models import (PRIORITIES, STATUS_FLOW, InvalidTicketError, Ticket,
                     make_ticket_id)
-from personalize import CATEGORIES, SLA_HOURS, TICKET_PREFIX
+from personalize import get_my_parameters
 
 CLOSED_STATES = {"Resolved", "Closed"}
 
@@ -24,13 +24,24 @@ def require_text(value, label):
     return cleaned
 
 
+def require_employee_id(value):
+    """Return the stripped employee ID, or raise an error if it is empty or not letters and digits."""
+    cleaned = value.strip()
+    if not cleaned:
+        raise InvalidTicketError("Employee ID cannot be empty.")
+    if not (cleaned.isascii() and cleaned.isalnum()) or len(cleaned) > 20:
+        raise InvalidTicketError("Employee ID must be 1 to 20 letters or digits, with no spaces or symbols.")
+    return cleaned
+
+
 class Helpdesk:
-    def __init__(self, tickets=None, categories=CATEGORIES, sla_hours=SLA_HOURS,
-                 prefix=TICKET_PREFIX):
+    def __init__(self, employee_id, tickets=None):
+        parameters = get_my_parameters(employee_id)
+        self.employee_id = employee_id
         self.tickets = tickets if tickets is not None else []
-        self.categories = categories
-        self.sla_hours = sla_hours
-        self.prefix = prefix
+        self.categories = parameters["categories"]
+        self.sla_hours = parameters["sla_hours"]
+        self.prefix = parameters["ticket_prefix"]
 
     def validate_category(self, value):
         return match_option(value, self.categories, "category")
