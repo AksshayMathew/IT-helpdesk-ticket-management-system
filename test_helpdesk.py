@@ -3,6 +3,7 @@ import glob
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -44,6 +45,8 @@ class HelpdeskTests(unittest.TestCase):
     def test_employee_id_is_checked(self):
         self.assertEqual(require_employee_id("  56040183 "), "56040183")
         self.assertEqual(require_employee_id("EMP1042"), "EMP1042")
+        self.assertEqual(require_employee_id("  emp1042 "), "EMP1042")
+        self.assertEqual(require_employee_id("Emp1042"), "EMP1042")
         for bad in ("", "   ", "ab cd", "emp-1", "a/b", "..", "x" * 21, "éa", "²"):
             with self.assertRaises(InvalidTicketError):
                 require_employee_id(bad)
@@ -352,6 +355,33 @@ class MenuTests(unittest.TestCase):
         with mock.patch("main.save_tickets") as saver:
             main.save_changes(Helpdesk("EMP1042", []))
         saver.assert_called_once_with([], data_path("EMP1042"))
+
+    def test_lower_case_id_is_the_same_employee_as_upper_case(self):
+        output = io.StringIO()
+        with mock.patch("builtins.input", side_effect=["emp1042", "0"]), \
+                mock.patch("main.load_tickets", return_value=[]) as loader, \
+                mock.patch("main.save_tickets"), contextlib.redirect_stdout(output):
+            main.main()
+        loader.assert_called_once_with(data_path("EMP1042"))
+        self.assertIn("Hello, employee EMP1042", output.getvalue())
+        self.assertIn(str(get_my_parameters("EMP1042")["sla_hours"]), output.getvalue())
+
+    def test_lower_case_twin_shares_profile_and_file_with_upper_case(self):
+        first_category = get_my_parameters("EMP1042")["categories"][0]
+        with tempfile.TemporaryDirectory() as folder, mock.patch("storage.DATA_FOLDER", folder):
+            first, second = io.StringIO(), io.StringIO()
+            answers = ["EMP1042", "1", first_category, "high", "Dev", "Printer jam", "0"]
+            with mock.patch("builtins.input", side_effect=answers), contextlib.redirect_stdout(first):
+                main.main()
+            with mock.patch("builtins.input", side_effect=["emp1042", "3", "5", "0"]), \
+                    contextlib.redirect_stdout(second):
+                main.main()
+            files = os.listdir(folder)
+        self.assertEqual(files, ["tickets_EMP1042.json"])
+        printed = second.getvalue()
+        self.assertIn("(1 saved tickets loaded)", printed)
+        self.assertIn(f"{get_my_parameters('EMP1042')['ticket_prefix']}-0001", printed)
+        self.assertRegex(printed, re.escape(first_category) + r"\s+1")
 
 
 if __name__ == "__main__":

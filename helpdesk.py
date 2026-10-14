@@ -25,13 +25,14 @@ def require_text(value, label):
 
 
 def require_employee_id(value):
-    """Return the stripped employee ID, or raise an error if it is empty or not letters and digits."""
+    """Return the employee ID in upper case, or raise an error if it is empty or not letters and digits.
+    Upper case, so 'emp1042' and 'EMP1042' are one employee with one profile and one tickets file."""
     cleaned = value.strip()
     if not cleaned:
         raise InvalidTicketError("Employee ID cannot be empty.")
     if not (cleaned.isascii() and cleaned.isalnum()) or len(cleaned) > 20:
         raise InvalidTicketError("Employee ID must be 1 to 20 letters or digits, with no spaces or symbols.")
-    return cleaned
+    return cleaned.upper()
 
 
 class Helpdesk:

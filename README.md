@@ -10,7 +10,8 @@ python main.py
 ```
 
 The program greets you with "Welcome to HCL Tech IT Support System" and asks for your
-employee ID (letters and digits, up to 20 characters). The ID decides your ticket categories,
+employee ID (letters and digits, up to 20 characters; upper and lower case are the same, so
+`emp1042` is treated as `EMP1042`). The ID decides your ticket categories,
 SLA hours and ticket prefix. Each employee has their own file, for example
 `tickets_56040183.json` (created automatically in this folder). Tickets are saved after every
 change and loaded again the next time the same ID is entered.
