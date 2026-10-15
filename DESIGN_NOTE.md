@@ -26,18 +26,31 @@ easily.
 
 ## One design decision and why
 
-**Decision:** the allowed status changes are stored as an ordered tuple,
-`STATUS_FLOW = ("Open", "In Progress", "Resolved", "Closed")`, and a ticket
-may only move to the status that comes *right after* its current one.
+**Decision:** the allowed status changes are stored as a dictionary that maps each
+status to the statuses it may move to next:
 
-**Why:** the alternative would be a long if/elif chain for every allowed pair of
-statuses, which is easy to get wrong and hard to change. With the tuple, the
-rule is just "find the current position, the next one is the only allowed
-move", so a jump like Open -> Closed is rejected by one check and the error
-message can tell the user exactly which status is allowed next. If the team
-ever adds a new status, only the tuple needs to change.
+```python
+STATUS_TRANSITIONS = {
+    "Open": ("In Progress",),
+    "In Progress": ("Resolved",),
+    "Resolved": ("Closed", "Open"),
+    "Closed": (),
+}
+```
+
+**Why:** we first stored the flow as an ordered tuple, where a ticket could only
+move to the status right after its current one. That only allows a straight line,
+so a Resolved ticket could never be reopened. With the dictionary, the rule for any
+status is just a lookup, so a status can have more than one allowed next step
+(Resolved can go to Closed or back to Open) and Closed has none. A bad move like
+Open -> Closed is still rejected by one check, and the error message lists every
+allowed status. If the team ever adds a status or a new move, only this dictionary
+changes. The alternative, a long if/elif chain for every pair of statuses, is easy
+to get wrong and hard to change.
 
 **Related choices:** a ticket counts as SLA-breached only while it is not
 Resolved or Closed, using `created_at + timedelta(hours=sla)` compared with
 the current time. The next ticket number is the highest number already used
-plus one, so IDs stay unique after the program is restarted.
+plus one, so IDs stay unique after the program is restarted. A reopened ticket keeps its
+original creation time, so its SLA is still measured from then and it can be flagged as
+breached again straight away.

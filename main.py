@@ -2,7 +2,7 @@ import math
 import sys
 
 from helpdesk import Helpdesk, match_option, require_employee_id, require_text
-from models import STATUS_FLOW, InvalidTicketError
+from models import STATUS_TRANSITIONS, InvalidTicketError
 from storage import data_path, load_tickets, save_tickets
 
 MENU = """
@@ -69,10 +69,12 @@ def update_status_menu(helpdesk):
     ticket = ask("Ticket ID (Enter to cancel): ", helpdesk.find_ticket, allow_blank=True)
     if ticket is None:
         return
-    if helpdesk.next_status(ticket) is None:
+    allowed = helpdesk.allowed_next(ticket)
+    if not allowed:
         print(f"{ticket.ticket_id} is already Closed, so there is nothing left to update.")
         return
     print(f"Current: {ticket}")
+    print(f"It can move to: {' or '.join(allowed)}")
     updated = ask("New status (Open/In Progress/Resolved/Closed, Enter to cancel): ",
                   lambda answer: helpdesk.update_status(ticket.ticket_id, answer),
                   allow_blank=True)
@@ -84,7 +86,7 @@ def filter_menu(helpdesk):
     print("Leave a filter blank to skip it.")
     category = ask("Category: ", lambda text: text.strip() and helpdesk.validate_category(text))
     priority = ask("Priority: ", lambda text: text.strip() and helpdesk.validate_priority(text))
-    status = ask("Status: ", lambda text: text.strip() and match_option(text, STATUS_FLOW, "status"))
+    status = ask("Status: ", lambda text: text.strip() and match_option(text, STATUS_TRANSITIONS, "status"))
     show_tickets(helpdesk, helpdesk.filter_tickets(category or None, priority or None, status or None))
 
 

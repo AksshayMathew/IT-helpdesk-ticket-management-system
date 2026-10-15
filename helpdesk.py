@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from models import (PRIORITIES, STATUS_FLOW, InvalidTicketError, Ticket,
+from models import (PRIORITIES, STATUS_TRANSITIONS, InvalidTicketError, Ticket,
                     make_ticket_id)
 from personalize import get_my_parameters
 
@@ -76,23 +76,22 @@ class Helpdesk:
         raise InvalidTicketError(f"No ticket found with ID '{ticket_id.strip()}'.")
 
     def update_status(self, ticket_id, new_status):
-        """Move a ticket one step forward: Open -> In Progress -> Resolved -> Closed."""
+        """Move a ticket to one of the statuses STATUS_TRANSITIONS allows from its current one."""
         ticket = self.find_ticket(ticket_id)
-        new_status = match_option(new_status, STATUS_FLOW, "status")
-        allowed = self.next_status(ticket)
-        if allowed is None:
+        new_status = match_option(new_status, STATUS_TRANSITIONS, "status")
+        allowed = self.allowed_next(ticket)
+        if not allowed:
             raise InvalidTicketError(f"{ticket.ticket_id} is already Closed.")
-        if new_status != allowed:
+        if new_status not in allowed:
             raise InvalidTicketError(
                 f"Cannot move {ticket.ticket_id} from '{ticket.status}' to '{new_status}'. "
-                f"Next allowed status: {allowed}.")
+                f"Next allowed status: {' or '.join(allowed)}.")
         ticket.status = new_status
         return ticket
 
-    def next_status(self, ticket):
-        """The only status the ticket may move to next, or None if it is already Closed."""
-        next_index = STATUS_FLOW.index(ticket.status) + 1
-        return STATUS_FLOW[next_index] if next_index < len(STATUS_FLOW) else None
+    def allowed_next(self, ticket):
+        """The statuses the ticket may move to from its current one (empty once Closed)."""
+        return STATUS_TRANSITIONS[ticket.status]
 
     def is_breached(self, ticket, now=None):
         """An unresolved ticket is breached once now passes created time + its SLA hours."""
@@ -118,7 +117,7 @@ class Helpdesk:
         """Ticket counts by status and by category, plus the SLA-breached tickets."""
         return {
             "by_status": {status: len([t for t in self.tickets if t.status == status])
-                          for status in STATUS_FLOW},
+                          for status in STATUS_TRANSITIONS},
             "by_category": {category: len([t for t in self.tickets if t.category == category])
                             for category in self.categories},
             "breached": [t.ticket_id for t in self.breached_tickets(now)],
@@ -131,7 +130,7 @@ class Helpdesk:
         if priority is not None:
             priority = self.validate_priority(priority)
         if status is not None:
-            status = match_option(status, STATUS_FLOW, "status")
+            status = match_option(status, STATUS_TRANSITIONS, "status")
         return [t for t in self.tickets
                 if (category is None or t.category == category)
                 and (priority is None or t.priority == priority)

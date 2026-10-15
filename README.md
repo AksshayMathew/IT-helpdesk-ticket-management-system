@@ -33,7 +33,7 @@ python personalize.py
 | Option | What it does |
 |---|---|
 | 1 | Raise a ticket (category, priority, requester, description) - ID and timestamp are automatic, e.g. `SR-0001` |
-| 2 | Update status: Open -> In Progress -> Resolved -> Closed (jumps are rejected; press Enter to cancel) |
+| 2 | Update status: Open -> In Progress -> Resolved -> Closed. A Resolved ticket can also be reopened (back to Open). Other moves are rejected; press Enter to cancel |
 | 3 | List all tickets (SLA-breached ones are flagged) |
 | 4 | Filter / search by category, priority and/or status |
 | 5 | Summary: counts by status, counts by category, SLA-breached tickets |

@@ -219,13 +219,56 @@ class HelpdeskTests(unittest.TestCase):
             Ticket(make_ticket_id(TICKET_PREFIX, 9999), self.category, "High", "Ann", "x"))
         self.assertEqual(self.helpdesk.next_ticket_id(), f"{TICKET_PREFIX}-10000")
 
-    def test_next_status_for_every_state(self):
+    def test_allowed_next_statuses_for_every_state(self):
         ticket = self.raise_one()
-        seen = []
-        while self.helpdesk.next_status(ticket) is not None:
-            seen.append(self.helpdesk.next_status(ticket))
-            self.helpdesk.update_status(ticket.ticket_id, seen[-1])
-        self.assertEqual(seen, ["In Progress", "Resolved", "Closed"])
+        allowed = {}
+        for status in ("Open", "In Progress", "Resolved", "Closed"):
+            ticket.status = status
+            allowed[status] = self.helpdesk.allowed_next(ticket)
+        self.assertEqual(allowed, {"Open": ("In Progress",), "In Progress": ("Resolved",),
+                                   "Resolved": ("Closed", "Open"), "Closed": ()})
+
+    def test_resolved_ticket_can_be_reopened_and_worked_again(self):
+        ticket = self.raise_one()
+        for status in ("In Progress", "Resolved", "Open", "In Progress", "Resolved", "Closed"):
+            self.helpdesk.update_status(ticket.ticket_id, status)
+        self.assertEqual(ticket.status, "Closed")
+
+    def test_only_resolved_tickets_can_be_reopened(self):
+        ticket = self.raise_one()
+        with self.assertRaises(InvalidTicketError):          # Open -> Open
+            self.helpdesk.update_status(ticket.ticket_id, "Open")
+        self.helpdesk.update_status(ticket.ticket_id, "In Progress")
+        with self.assertRaises(InvalidTicketError):          # In Progress -> Open
+            self.helpdesk.update_status(ticket.ticket_id, "Open")
+        self.helpdesk.update_status(ticket.ticket_id, "Resolved")
+        with self.assertRaises(InvalidTicketError):          # Resolved -> In Progress
+            self.helpdesk.update_status(ticket.ticket_id, "In Progress")
+        self.helpdesk.update_status(ticket.ticket_id, "Closed")
+        with self.assertRaises(InvalidTicketError):          # Closed is final
+            self.helpdesk.update_status(ticket.ticket_id, "Open")
+
+    def test_error_names_every_allowed_status(self):
+        ticket = self.raise_one()
+        self.helpdesk.update_status(ticket.ticket_id, "In Progress")
+        self.helpdesk.update_status(ticket.ticket_id, "Resolved")
+        with self.assertRaises(InvalidTicketError) as caught:
+            self.helpdesk.update_status(ticket.ticket_id, "In Progress")
+        self.assertIn("Next allowed status: Closed or Open", str(caught.exception))
+
+    def test_reopened_ticket_counts_for_the_sla_again(self):
+        ticket = self.raise_one("Critical")
+        self.helpdesk.backdate_ticket(ticket.ticket_id, SLA_HOURS["Critical"] + 1)
+        self.assertTrue(self.helpdesk.is_breached(ticket))
+        self.helpdesk.update_status(ticket.ticket_id, "In Progress")
+        self.helpdesk.update_status(ticket.ticket_id, "Resolved")
+        self.assertFalse(self.helpdesk.is_breached(ticket))
+        self.helpdesk.update_status(ticket.ticket_id, "Open")
+        self.assertTrue(self.helpdesk.is_breached(ticket))
+
+    def test_summary_lists_statuses_in_lifecycle_order(self):
+        self.assertEqual(list(self.helpdesk.summary()["by_status"]),
+                         ["Open", "In Progress", "Resolved", "Closed"])
 
     def test_backdating_too_far_is_rejected_not_a_crash(self):
         ticket = self.raise_one()
@@ -277,6 +320,12 @@ class MenuTests(unittest.TestCase):
         self.assertEqual(ticket.status, "Open")
         self.assertIn("Cannot move SR-0001", printed)
         self.assertIn("Invalid status 'bogus'", printed)
+
+    def test_menu_can_reopen_a_resolved_ticket(self):
+        ticket = Ticket("SR-0001", self.category, "Low", "Ann", "x", status="Resolved")
+        _, printed = run_menu_with(["2", "SR-0001", "open", "0"], [ticket])
+        self.assertIn("It can move to: Closed or Open", printed)
+        self.assertEqual(ticket.status, "Open")
 
     def test_backdate_rejects_bad_numbers(self):
         ticket = Ticket("SR-0001", self.category, "Low", "Ann", "x")
